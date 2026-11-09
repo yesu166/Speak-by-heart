@@ -329,7 +329,7 @@ function buildRoom(scene: THREE.Scene, renderer: THREE.WebGLRenderer): THREE.Web
   return environment;
 }
 
-function createPlacements(audience: AudienceSize, source: THREE.Group): Placement[] {
+function createPlacements(audience: AudienceSize, source?: THREE.Group): Placement[] {
   const rows: Record<AudienceSize, number> = {
     "Small room": 1,
     Seminar: 4,
@@ -337,9 +337,13 @@ function createPlacements(audience: AudienceSize, source: THREE.Group): Placemen
   };
   const rowCount = rows[audience];
   const columns = [-3.34, 0, 3.34];
-  const box = new THREE.Box3().setFromObject(source);
-  const center = box.getCenter(new THREE.Vector3());
-  const normalize = new THREE.Matrix4().makeTranslation(-center.x, -box.min.y, -center.z);
+  let normalize = new THREE.Matrix4();
+  if (source) {
+    source.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(source);
+    const center = box.getCenter(new THREE.Vector3());
+    normalize = new THREE.Matrix4().makeTranslation(-center.x, -box.min.y, -center.z);
+  }
   const faceStage = new THREE.Matrix4().makeRotationY(Math.PI);
   const placements: Placement[] = [];
 
@@ -475,6 +479,7 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
     let disposed = false;
     let environmentTarget: THREE.WebGLRenderTarget | undefined;
     let fallbackAdded = false;
+    let scenePlacements = createPlacements(audience);
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x171b18);
@@ -507,7 +512,6 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
     sceneState.current.batches = [];
     sceneState.current.mood = energy;
 
-    const placements = createPlacements(audience, new THREE.Group());
     const loader = new GLTFLoader();
     loader.setMeshoptDecoder(MeshoptDecoder);
     loader.load(
@@ -518,6 +522,7 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
         model.updateMatrixWorld(true);
 
         const actualPlacements = createPlacements(audience, model);
+        scenePlacements = actualPlacements;
         const batches = createAudienceBatches(scene, model, actualPlacements);
         sceneState.current.batches = batches;
         (scene.userData as { audienceReady?: boolean }).audienceReady = true;
@@ -527,41 +532,40 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
         if (disposed) return;
         console.error("StageRoom audience model failed to load:", error);
         if (!fallbackAdded) {
-          addFallbackAudience(scene, placements);
+          addFallbackAudience(scene, scenePlacements);
           fallbackAdded = true;
         }
       }
     );
 
     const clock = new THREE.Clock();
+    const rowDeltas = scenePlacements.map(() => new THREE.Matrix4());
+    const rotationMatrix = new THREE.Matrix4();
+    const inversePivotMatrix = new THREE.Matrix4();
+    const animatedMatrix = new THREE.Matrix4();
+
     renderer.setAnimationLoop(() => {
       const elapsed = clock.getElapsedTime();
       const mood = sceneState.current.mood;
       const amplitude = mood === "Supportive" ? 0.0045 : mood === "Neutral" ? 0.002 : 0.011;
       const yawAmplitude = mood === "Distracted" ? 0.012 : 0.003;
-      const placementsForMotion = sceneState.current.batches.length > 0
-        ? createPlacements(audience, new THREE.Group())
-        : [];
 
-      if (sceneState.current.batches.length > 0 && placementsForMotion.length > 0) {
-        const deltas = placementsForMotion.map((placement) => {
-          const bob = Math.sin(elapsed * 1.05 + placement.phase) * amplitude;
-          const yaw = Math.sin(elapsed * 0.34 + placement.phase) * yawAmplitude;
-          const delta = new THREE.Matrix4()
-            .makeTranslation(placement.pivot.x, placement.pivot.y + bob, placement.pivot.z)
-            .multiply(new THREE.Matrix4().makeRotationY(yaw))
-            .multiply(new THREE.Matrix4().makeTranslation(-placement.pivot.x, -placement.pivot.y, -placement.pivot.z));
-          return delta;
-        });
+      scenePlacements.forEach((placement, index) => {
+        const bob = Math.sin(elapsed * 1.05 + placement.phase) * amplitude;
+        const yaw = Math.sin(elapsed * 0.34 + placement.phase) * yawAmplitude;
+        rowDeltas[index]
+          .makeTranslation(placement.pivot.x, placement.pivot.y + bob, placement.pivot.z)
+          .multiply(rotationMatrix.makeRotationY(yaw))
+          .multiply(inversePivotMatrix.makeTranslation(-placement.pivot.x, -placement.pivot.y, -placement.pivot.z));
+      });
 
-        sceneState.current.batches.forEach((batch) => {
-          batch.entries.forEach((entry, index) => {
-            const animated = deltas[entry.placementIndex].clone().multiply(entry.base);
-            batch.mesh.setMatrixAt(index, animated);
-          });
-          batch.mesh.instanceMatrix.needsUpdate = true;
+      sceneState.current.batches.forEach((batch) => {
+        batch.entries.forEach((entry, index) => {
+          animatedMatrix.multiplyMatrices(rowDeltas[entry.placementIndex], entry.base);
+          batch.mesh.setMatrixAt(index, animatedMatrix);
         });
-      }
+        batch.mesh.instanceMatrix.needsUpdate = true;
+      });
 
       renderer.render(scene, camera);
     });
