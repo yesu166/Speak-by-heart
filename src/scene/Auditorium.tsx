@@ -6,13 +6,14 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 
 type AudienceSize = "Small room" | "Seminar" | "Auditorium";
 type Energy = "Supportive" | "Neutral" | "Distracted";
+export type Venue = "Main auditorium" | "Classroom" | "Conference room" | "Outdoor amphitheatre";
 
 export type SceneHandle = {
   enterVR: () => Promise<void>;
   setAudienceMood: (mood: Energy) => void;
 };
 
-type Props = { audience: AudienceSize; energy: Energy };
+type Props = { audience: AudienceSize; energy: Energy; venue: Venue };
 
 type Placement = {
   matrix: THREE.Matrix4;
@@ -178,15 +179,33 @@ function addBox(
   return mesh;
 }
 
-function buildRoom(scene: THREE.Scene, renderer: THREE.WebGLRenderer): THREE.WebGLRenderTarget {
+function buildRoom(scene: THREE.Scene, renderer: THREE.WebGLRenderer, venue: Venue): THREE.WebGLRenderTarget {
+  const outdoor = venue === "Outdoor amphitheatre";
+  const classroom = venue === "Classroom";
+  const conference = venue === "Conference room";
   const walnutTexture = createWalnutTexture();
   const carpetTexture = createCarpetTexture();
   const screenTexture = createScreenTexture();
 
-  const walnut = new THREE.MeshStandardMaterial({ map: walnutTexture, roughness: 0.68, metalness: 0.04 });
-  const darkWalnut = new THREE.MeshStandardMaterial({ color: 0x34271f, roughness: 0.82 });
-  const acoustic = new THREE.MeshStandardMaterial({ color: 0x242b27, roughness: 0.96 });
-  const carpet = new THREE.MeshStandardMaterial({ map: carpetTexture, roughness: 0.98 });
+  const walnut = new THREE.MeshStandardMaterial({
+    map: walnutTexture,
+    color: classroom ? 0xb9a27a : conference ? 0x87918d : 0xffffff,
+    roughness: 0.68,
+    metalness: conference ? 0.12 : 0.04
+  });
+  const darkWalnut = new THREE.MeshStandardMaterial({
+    color: classroom ? 0x3b4938 : conference ? 0x1d292d : 0x34271f,
+    roughness: 0.82
+  });
+  const acoustic = new THREE.MeshStandardMaterial({
+    color: classroom ? 0x777d65 : conference ? 0x34444a : 0x242b27,
+    roughness: 0.96
+  });
+  const carpet = new THREE.MeshStandardMaterial({
+    map: outdoor ? null : carpetTexture,
+    color: outdoor ? 0x344332 : classroom ? 0x756c55 : 0xffffff,
+    roughness: 0.98
+  });
   const brass = new THREE.MeshStandardMaterial({ color: 0xb28a55, metalness: 0.72, roughness: 0.32 });
   const charcoal = new THREE.MeshStandardMaterial({ color: 0x242a26, roughness: 0.83 });
   const screenFrame = new THREE.MeshStandardMaterial({ color: 0x292d27, metalness: 0.42, roughness: 0.4 });
@@ -199,36 +218,108 @@ function buildRoom(scene: THREE.Scene, renderer: THREE.WebGLRenderer): THREE.Web
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const rearWall = addBox(scene, 19, 9, 0.65, 0, 4.45, 9.0, acoustic);
-  rearWall.receiveShadow = true;
+  if (!outdoor) {
+    const rearWall = addBox(scene, 19, 9, 0.65, 0, 4.45, 9.0, acoustic);
+    rearWall.receiveShadow = true;
+    const stageBackWall = addBox(scene, 19, 9, 0.55, 0, 4.45, -15.1, darkWalnut);
+    stageBackWall.receiveShadow = true;
 
-  const stageBackWall = addBox(scene, 19, 9, 0.55, 0, 4.45, -15.1, darkWalnut);
-  stageBackWall.receiveShadow = true;
+    for (const side of [-1, 1]) {
+      addBox(scene, 0.55, 9, 26, side * 9.4, 4.4, -3.1, acoustic);
 
-  for (const side of [-1, 1]) {
-    addBox(scene, 0.55, 9, 26, side * 9.4, 4.4, -3.1, acoustic);
+      for (let z = -13.4; z <= 6.2; z += 1.2) {
+        addBox(scene, 0.18, 5.6, 0.72, side * 9.04, 4.05, z, walnut);
+        addBox(scene, 0.055, 5.6, 0.045, side * 8.92, 4.05, z, brass);
+      }
 
-    for (let z = -13.4; z <= 6.2; z += 1.2) {
-      addBox(scene, 0.18, 5.6, 0.72, side * 9.04, 4.05, z, walnut);
-      addBox(scene, 0.055, 5.6, 0.045, side * 8.92, 4.05, z, brass);
+      for (const z of [-11.1, -6.3, -1.5, 3.3]) {
+        addBox(scene, 0.12, 0.68, 0.23, side * 9.05, 4.2, z, brass);
+        addBox(scene, 0.09, 0.48, 0.11, side * 8.96, 4.2, z, lampGlass);
+        const wallGlow = new THREE.PointLight(conference ? 0x9ac8d0 : 0xffc983, 7, 7, 2);
+        wallGlow.position.set(side * 8.45, 4.1, z);
+        scene.add(wallGlow);
+      }
     }
 
-    for (const z of [-11.1, -6.3, -1.5, 3.3]) {
-      addBox(scene, 0.12, 0.68, 0.23, side * 9.05, 4.2, z, brass);
-      addBox(scene, 0.09, 0.48, 0.11, side * 8.96, 4.2, z, lampGlass);
-      const wallGlow = new THREE.PointLight(0xffc983, 7, 7, 2);
-      wallGlow.position.set(side * 8.45, 4.1, z);
-      scene.add(wallGlow);
+    const ceiling = new THREE.Mesh(
+      new THREE.PlaneGeometry(19, 27),
+      new THREE.MeshStandardMaterial({ color: classroom ? 0x4b5148 : conference ? 0x172429 : 0x171d19, roughness: 0.95 })
+    );
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.set(0, 8.8, -3.3);
+    scene.add(ceiling);
+
+    for (let x = -9; x <= 9; x += 0.9) {
+      addBox(scene, 0.07, 0.12, 27, x, 8.18, -3.25, darkWalnut);
+    }
+  } else {
+    const starGeometry = new THREE.BufferGeometry();
+    const starPositions: number[] = [];
+    for (let i = 0; i < 220; i++) {
+      starPositions.push((Math.random() - 0.5) * 46, 5 + Math.random() * 15, -18 + Math.random() * 34);
+    }
+    starGeometry.setAttribute("position", new THREE.Float32BufferAttribute(starPositions, 3));
+    const stars = new THREE.Points(
+      starGeometry,
+      new THREE.PointsMaterial({ color: 0xd7dfd0, size: 0.055, transparent: true, opacity: 0.75 })
+    );
+    scene.add(stars);
+
+    for (const side of [-1, 1]) {
+      const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x30271e, roughness: 1 });
+      const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x283c30, roughness: 1 });
+      for (let i = 0; i < 5; i++) {
+        const x = side * (12 + (i % 2) * 2.5);
+        const z = -2 + i * 4.8;
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 3.2, 7), trunkMaterial);
+        trunk.position.set(x, 1.6, z);
+        const crown = new THREE.Mesh(new THREE.SphereGeometry(1.25 + (i % 3) * 0.25, 8, 7), leafMaterial);
+        crown.position.set(x, 3.5, z);
+        scene.add(trunk, crown);
+      }
+    }
+
+    const stone = new THREE.MeshStandardMaterial({ color: 0x555a50, roughness: 0.94 });
+    for (let row = 0; row < 5; row++) {
+      const radius = 8.8 + row * 1.55;
+      const arc = new THREE.Mesh(
+        new THREE.TorusGeometry(radius, 0.13, 6, 88, Math.PI * 0.82),
+        stone
+      );
+      arc.rotation.y = Math.PI;
+      arc.position.set(0, 0.35 + row * 0.22, -11.0);
+      scene.add(arc);
     }
   }
 
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(19, 27), new THREE.MeshStandardMaterial({ color: 0x171d19, roughness: 0.95 }));
-  ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.set(0, 8.8, -3.3);
-  scene.add(ceiling);
+  if (classroom) {
+    const board = new THREE.MeshStandardMaterial({ color: 0x263c30, roughness: 0.92 });
+    addBox(scene, 12.4, 4.1, 0.18, 0, 4.3, -14.48, walnut);
+    addBox(scene, 12.1, 3.8, 0.08, 0, 4.3, -14.34, board);
+    for (const x of [-7.1, 7.1]) {
+      const windowGlass = new THREE.MeshStandardMaterial({ color: 0x9ab4b4, emissive: 0x283c40, metalness: 0.15, roughness: 0.28 });
+      addBox(scene, 0.08, 3.0, 2.2, x, 4.6, -1.3, brass);
+      addBox(scene, 0.04, 2.8, 2.0, x + (x < 0 ? 0.06 : -0.06), 4.6, -1.3, windowGlass);
+    }
+  }
 
-  for (let x = -9; x <= 9; x += 0.9) {
-    addBox(scene, 0.07, 0.12, 27, x, 8.18, -3.25, darkWalnut);
+  if (conference) {
+    const glass = new THREE.MeshStandardMaterial({ color: 0x7da1a4, transparent: true, opacity: 0.18, metalness: 0.2, roughness: 0.12, side: THREE.DoubleSide });
+    for (const side of [-1, 1]) {
+      for (const z of [-10, -5, 0, 5]) {
+        addBox(scene, 0.035, 6.1, 0.035, side * 8.9, 4.25, z, brass);
+      }
+      const pane = new THREE.Mesh(new THREE.PlaneGeometry(0.02, 2.7), glass);
+      pane.rotation.y = Math.PI / 2;
+      pane.position.set(side * 8.87, 4.45, -2.5);
+      scene.add(pane);
+    }
+    const table = new THREE.Mesh(
+      new THREE.BoxGeometry(6.6, 0.16, 2.1),
+      new THREE.MeshStandardMaterial({ color: 0x453b32, roughness: 0.42, metalness: 0.08 })
+    );
+    table.position.set(0, 0.86, -9.7);
+    scene.add(table);
   }
 
   for (const x of [-6.5, -3.2, 0, 3.2, 6.5]) {
@@ -286,20 +377,20 @@ function buildRoom(scene: THREE.Scene, renderer: THREE.WebGLRenderer): THREE.Web
   micBase.position.set(1.5, 0.44, -10.25);
   scene.add(micBase);
 
-  const stageGlow = new THREE.PointLight(0xffbf7f, 18, 13, 1.8);
+  const stageGlow = new THREE.PointLight(outdoor ? 0xffb86c : conference ? 0xb3d5de : 0xffbf7f, 18, 13, 1.8);
   stageGlow.position.set(0, 1.9, -8.5);
   scene.add(stageGlow);
 
-  const screenGlow = new THREE.PointLight(0x82977c, 10, 11, 2);
+  const screenGlow = new THREE.PointLight(conference ? 0x86c3d5 : 0x82977c, 10, 11, 2);
   screenGlow.position.set(0, 5.6, -13.6);
   scene.add(screenGlow);
 
-  const spotlightA = new THREE.SpotLight(0xffd9ac, 150, 28, Math.PI / 7, 0.48, 1.2);
+  const spotlightA = new THREE.SpotLight(outdoor ? 0xffd0a0 : 0xffd9ac, 150, 28, Math.PI / 7, 0.48, 1.2);
   spotlightA.position.set(-4.2, 11.5, -5.1);
   spotlightA.target.position.set(-1.2, 0.2, -10.8);
   scene.add(spotlightA, spotlightA.target);
 
-  const spotlightB = new THREE.SpotLight(0xd5dfbb, 105, 26, Math.PI / 7, 0.55, 1.4);
+  const spotlightB = new THREE.SpotLight(conference ? 0xc2e5ed : 0xd5dfbb, 105, 26, Math.PI / 7, 0.55, 1.4);
   spotlightB.position.set(4.4, 10.5, -4.7);
   spotlightB.target.position.set(1.8, 0.2, -10.6);
   scene.add(spotlightB, spotlightB.target);
@@ -318,7 +409,11 @@ function buildRoom(scene: THREE.Scene, renderer: THREE.WebGLRenderer): THREE.Web
   key.shadow.normalBias = 0.025;
   scene.add(key);
 
-  scene.add(new THREE.HemisphereLight(0xe5e0d2, 0x222821, 1.35));
+  scene.add(new THREE.HemisphereLight(
+    outdoor ? 0x8da9c7 : classroom ? 0xf0e6c9 : conference ? 0xd8eff0 : 0xe5e0d2,
+    outdoor ? 0x27382e : 0x222821,
+    outdoor ? 1.8 : 1.35
+  ));
 
   const pmrem = new THREE.PMREMGenerator(renderer);
   const environment = pmrem.fromScene(new RoomEnvironment(), 0.04);
@@ -329,7 +424,7 @@ function buildRoom(scene: THREE.Scene, renderer: THREE.WebGLRenderer): THREE.Web
   return environment;
 }
 
-function createPlacements(audience: AudienceSize, source?: THREE.Group): Placement[] {
+function createPlacements(audience: AudienceSize, source?: THREE.Group, venue: Venue = "Main auditorium"): Placement[] {
   const rows: Record<AudienceSize, number> = {
     "Small room": 1,
     Seminar: 4,
@@ -349,12 +444,16 @@ function createPlacements(audience: AudienceSize, source?: THREE.Group): Placeme
 
   for (let row = 0; row < rowCount; row++) {
     for (let col = 0; col < columns.length; col++) {
-      const x = columns[col];
+      const outdoor = venue === "Outdoor amphitheatre";
+      const angle = outdoor ? (col - 1) * 0.46 : 0;
+      const radius = 6.0 + row * 1.22;
+      const x = outdoor ? Math.sin(angle) * radius : columns[col];
       const y = 0.025 + row * 0.105;
-      const z = -6.35 + row * 1.23;
+      const z = outdoor ? -11.0 + Math.cos(angle) * radius : -6.35 + row * 1.23;
+      const yaw = outdoor ? Math.PI - angle : Math.PI;
       const matrix = new THREE.Matrix4()
         .makeTranslation(x, y, z)
-        .multiply(faceStage)
+        .multiply(new THREE.Matrix4().makeRotationY(yaw))
         .multiply(normalize);
 
       placements.push({
@@ -449,7 +548,7 @@ function addFallbackAudience(scene: THREE.Scene, placements: Placement[]): void 
   });
 }
 
-export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ audience, energy }, ref) {
+export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ audience, energy, venue }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const sceneState = useRef<SceneRuntime>({ batches: [], mood: energy });
 
@@ -479,15 +578,21 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
     let disposed = false;
     let environmentTarget: THREE.WebGLRenderTarget | undefined;
     let fallbackAdded = false;
-    let scenePlacements = createPlacements(audience);
+    let scenePlacements = createPlacements(audience, undefined, venue);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x171b18);
-    scene.fog = new THREE.Fog(0x171b18, 23, 49);
+    const outdoor = venue === "Outdoor amphitheatre";
+    const backgroundColor = outdoor ? 0x111b26 : venue === "Classroom" ? 0x4d5145 : venue === "Conference room" ? 0x11191d : 0x171b18;
+    scene.background = new THREE.Color(backgroundColor);
+    scene.fog = outdoor
+      ? new THREE.Fog(backgroundColor, 40, 72)
+      : new THREE.Fog(backgroundColor, 27, 56);
 
-    const camera = new THREE.PerspectiveCamera(46, container.clientWidth / Math.max(1, container.clientHeight), 0.1, 110);
-    camera.position.set(0, 5.9, 15.2);
-    camera.lookAt(0, 2.35, -5.2);
+    // Speaker's point of view: the camera stands on the stage and faces the audience.
+    // The previous camera was behind the rear wall, which completely hid the crowd.
+    const camera = new THREE.PerspectiveCamera(53, container.clientWidth / Math.max(1, container.clientHeight), 0.1, 110);
+    camera.position.set(0, 2.65, -12.45);
+    camera.lookAt(0, 1.32, 0.6);
 
     const renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -504,7 +609,7 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
     renderer.xr.enabled = true;
     container.appendChild(renderer.domElement);
 
-    environmentTarget = buildRoom(scene, renderer);
+    environmentTarget = buildRoom(scene, renderer, venue);
 
     sceneState.current.renderer = renderer;
     sceneState.current.scene = scene;
@@ -521,7 +626,7 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
         const model = gltf.scene;
         model.updateMatrixWorld(true);
 
-        const actualPlacements = createPlacements(audience, model);
+        const actualPlacements = createPlacements(audience, model, venue);
         scenePlacements = actualPlacements;
         const batches = createAudienceBatches(scene, model, actualPlacements);
         sceneState.current.batches = batches;
@@ -616,7 +721,7 @@ export const Auditorium = forwardRef<SceneHandle, Props>(function Auditorium({ a
       sceneState.current.camera = undefined;
       sceneState.current.batches = [];
     };
-  }, [audience]);
+  }, [audience, venue]);
 
   return <div className="three-host" ref={host} aria-label="Realistic 3D auditorium with a seated virtual audience" />;
 });
