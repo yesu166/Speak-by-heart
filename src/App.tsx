@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDownRight, ArrowLeft, ArrowRight, AudioLines, Check, ChevronDown, CircleHelp, Clock3, Eye, Headphones, Mic, MicOff, MonitorPlay, Play, RotateCcw, Settings2, Sparkles, Users, Volume2, VolumeX, Waves, X } from "lucide-react";
+import { ArrowDownRight, ArrowRight, AudioLines, Check, CircleHelp, Clock3, Eye, Headphones, Mic, MicOff, MonitorPlay, Settings2, Users, Volume2, VolumeX, Waves, X } from "lucide-react";
 import { Auditorium } from "./scene/Auditorium";
 import type { SceneHandle } from "./scene/Auditorium";
 
 type AudienceSize = "Small room" | "Seminar" | "Auditorium";
 type Energy = "Supportive" | "Neutral" | "Distracted";
-type SessionMode = "desktop" | "vr";
-
 const audienceSizes: { label: AudienceSize; count: string; detail: string }[] = [
   { label: "Small room", count: "12 people", detail: "A relaxed warm-up" },
   { label: "Seminar", count: "48 people", detail: "A familiar classroom" },
@@ -17,7 +15,6 @@ export default function App() {
   const sceneRef = useRef<SceneHandle>(null);
   const [audience, setAudience] = useState<AudienceSize>("Seminar");
   const [energy, setEnergy] = useState<Energy>("Supportive");
-  const [mode, setMode] = useState<SessionMode>("desktop");
   const [title, setTitle] = useState("The ideas worth sharing");
   const [duration, setDuration] = useState(5);
   const [remaining, setRemaining] = useState(300);
@@ -136,7 +133,6 @@ export default function App() {
       await sceneRef.current?.enterVR();
     } catch (error) {
       console.error("Unable to enter VR:", error);
-      setMode("desktop");
     }
   }
 
@@ -149,8 +145,6 @@ export default function App() {
       setFullscreen(false);
     }
   }
-
-  const progress = duration * 60 ? elapsed / (duration * 60) : 0;
 
   return (
     <main className="app-shell">
