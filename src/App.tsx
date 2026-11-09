@@ -6,8 +6,8 @@ import type { SceneHandle } from "./scene/Auditorium";
 type AudienceSize = "Small room" | "Seminar" | "Auditorium";
 type Energy = "Supportive" | "Neutral" | "Distracted";
 const audienceSizes: { label: AudienceSize; count: string; detail: string }[] = [
-  { label: "Small room", count: "12 people", detail: "A relaxed warm-up" },
-  { label: "Seminar", count: "48 people", detail: "A familiar classroom" },
+  { label: "Small room", count: "15 people", detail: "A relaxed warm-up" },
+  { label: "Seminar", count: "60 people", detail: "A familiar classroom" },
   { label: "Auditorium", count: "120 people", detail: "A bigger stage" }
 ];
 
