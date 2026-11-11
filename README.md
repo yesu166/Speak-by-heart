@@ -1,25 +1,40 @@
 # StageRoom
 
-**Speak with presence.** StageRoom is a 3D public-speaking practice room built with React, TypeScript and Three.js.
+**Speak with presence.** StageRoom is a browser-based 3D public-speaking simulator built with React, TypeScript and Three.js. The experience is designed around the speaker's point of view: the venue fills the viewport, while practice controls fade away until the pointer approaches an edge.
 
-## MVP 1
+## Experience
 
-- Cinematic auditorium with a textured, five-person seated audience model.
-- GPU-instanced audience rows for 15, 60 and 120-person room sizes.
-- Warm walnut acoustic panels, carpet texture, brass details, stage lighting, projection screen and PBR environment reflections.
-- Three audience-energy settings with subtle crowd response.
-- Practice title, session timer, microphone permission and live input meter.
-- Responsive control surface and low-distraction visual design.
+- Full-viewport 3D practice venue with edge-revealed, auto-hiding controls.
+- Four room environments: main auditorium, classroom, conference room and outdoor amphitheatre.
+- Five distinct textured seated audience models, instanced into 15, 60 or 120 background seats.
+- Two individual rigged foreground audience members. They play a real sit-down animation, then settle into subtle head and breathing idles.
+- The displayed audience totals are 17, 62 and 122, including the two foreground characters.
+- Walnut and acoustic room finishes, carpet texture, stage lighting, projection screen, glass, outdoor trees and floating dust in enclosed venues.
+- Supportive, neutral and distracted audience-energy settings.
+- Low-volume crowd murmur while a session is running, matched to the selected venue, and a short applause cue when a session ends.
+- Session timer, microphone permission, local input meter and fullscreen mode.
 - WebXR immersive VR entry where the browser and headset support `immersive-vr`.
-- No account system, hosted AI inference, analytics SDKs or heavy UI framework.
+- Three.js and GLB assets are loaded in the browser. No desktop app or local installation is needed for the hosted site.
 
-## Realistic audience asset
+## 3D assets and licenses
 
-The seated audience model is **Avery, Riley, Morgan, Rowan and Nora**, a five-person textured GLB row by Innerscene. It is adapted from MakeHuman/MPFB CC0 assets and released under **CC0-1.0**. The GLB is optimized for web delivery with Meshopt geometry compression and WebP textures, reducing the downloaded asset from roughly 29 MB to under 4 MB.
+The background row is **Avery, Riley, Morgan, Rowan and Nora**, a five-person seated GLB by Innerscene, adapted from MakeHuman/MPFB assets and released under **CC0-1.0**:
 
-Source: https://www.innerscene.com/tools/library/3d-parts/avery-riley-morgan-rowan-and-nora-3d-person-audience-row-of--da50868b
+https://www.innerscene.com/tools/library/3d-parts/avery-riley-morgan-rowan-and-nora-3d-person-audience-row-of--da50868b
 
-The figures are static seated models, not individually rigged characters. Audience energy currently changes subtle row-level movement; individual head, arm and facial animation is a later upgrade.
+The two animated foreground characters are **Sam** and **Maya**, each distributed as a rigged CC0 GLB with an original six-second sit/stand animation. StageRoom trims the animation to the sit-down section, then adds a restrained procedural head and chest idle:
+
+- https://www.innerscene.com/tools/library/3d-parts/sit-down-and-stand-up-sam-3d-person-animated-66ca6c29
+- https://www.innerscene.com/tools/library/3d-parts/sit-down-and-stand-up-maya-3d-person-animated-2fc646b4
+
+The crowd ambience and applause audio are CC0 files from SFXMint:
+
+- https://sfxmint.com/sounds/crowd-murmur-77
+- https://sfxmint.com/sounds/crowd-murmur-51
+- https://sfxmint.com/sounds/crowd-murmur-64
+- https://sfxmint.com/sounds/crowd-applause-58
+
+The background row is still a set of static seated models repeated with GPU instancing. The two foreground people are the genuinely rigged and animated characters; the entire audience is not individually animated, and there are no facial-expression or lip-sync systems yet.
 
 ## Run locally
 
@@ -38,8 +53,8 @@ npm run preview
 
 ## VR notes
 
-Use a WebXR-compatible browser and headset, serve the app over HTTPS (or localhost for development), and connect a headset before opening immersive mode. MVP 1 places the same Three.js scene in VR. Motion controllers, hand tracking and presenter embodiment are later improvements.
+Use a WebXR-compatible browser and headset, serve the app over HTTPS (or localhost for development), and connect a headset before opening immersive mode. The same Three.js venue is used in VR. Motion-controller interactions and hand tracking are later improvements.
 
 ## Scope and privacy
 
-The microphone is not recorded or uploaded. It is used only for a local input-level meter and remains off until the user explicitly connects it. There is no AI evaluation in MVP 1.
+The microphone remains off until explicitly enabled. It is used only for a local input-level meter and is not recorded or uploaded. There is no hosted AI evaluation in the current MVP.
