@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
   CircleHelp,
-  Clock3,
   Expand,
   MapPin,
   Mic,
@@ -11,14 +10,17 @@ import {
   Pause,
   Play,
   Settings2,
-  Users,
   Volume2,
   VolumeX,
   Waves,
   X
 } from "lucide-react";
-import { Auditorium } from "./scene/Auditorium";
 import type { SceneHandle, Venue } from "./scene/Auditorium";
+
+const Auditorium = lazy(async () => {
+  const scene = await import("./scene/Auditorium");
+  return { default: scene.Auditorium };
+});
 
 type AudienceSize = "Small room" | "Seminar" | "Auditorium";
 type Energy = "Supportive" | "Neutral" | "Distracted";
@@ -31,17 +33,27 @@ const venues: { label: Venue; subtitle: string; icon: string }[] = [
 ];
 
 const audienceSizes: { label: AudienceSize; count: number }[] = [
-  { label: "Small room", count: 15 },
-  { label: "Seminar", count: 60 },
-  { label: "Auditorium", count: 120 }
+  { label: "Small room", count: 17 },
+  { label: "Seminar", count: 62 },
+  { label: "Auditorium", count: 122 }
 ];
 
-const CROWD_AMBIENCE =
-  "https://d2ol7oe51mr4n9.cloudfront.net/user_3KrUYE2WtgFOq6wOmniZwGJHvVm/f679bc48-edc8-497c-80ab-6af27b4bb4da.mp3";
+const AMBIENCE_BY_VENUE: Record<Venue, string> = {
+  "Main auditorium": "https://sfxmint.com/dl/crowd-murmur-77.mp3",
+  "Classroom": "https://sfxmint.com/dl/crowd-murmur-51.mp3",
+  "Conference room": "https://sfxmint.com/dl/crowd-murmur-51.mp3",
+  "Outdoor amphitheatre": "https://sfxmint.com/dl/crowd-murmur-64.mp3"
+};
+const APPLAUSE_SOUND = "https://sfxmint.com/dl/crowd-applause-58.mp3";
+
+function selectedAudienceCount(size: AudienceSize): number {
+  return audienceSizes.find((item) => item.label === size)?.count ?? 60;
+}
 
 export default function App() {
   const sceneRef = useRef<SceneHandle>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const applauseRef = useRef<HTMLAudioElement>(null);
   const mediaRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
@@ -66,10 +78,7 @@ export default function App() {
   const [micState, setMicState] = useState<"idle" | "ready" | "denied">("idle");
   const [micLevel, setMicLevel] = useState(0);
   const [vrStatus, setVrStatus] = useState<"checking" | "available" | "unavailable">("checking");
-  const [fullscreen, setFullscreen] = useState(false);
 
-  const selectedVenue = venues.find((item) => item.label === venue) ?? venues[0];
-  const selectedAudience = audienceSizes.find((item) => item.label === audience) ?? audienceSizes[1];
   const clock = useMemo(() => {
     const mm = Math.floor(remaining / 60).toString().padStart(2, "0");
     const ss = (remaining % 60).toString().padStart(2, "0");
@@ -114,13 +123,19 @@ export default function App() {
 
   useEffect(() => {
     const initialHide = window.setTimeout(() => setControlsVisible(false), 5200);
-    const updateFullscreen = () => setFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener("fullscreenchange", updateFullscreen);
     return () => {
       window.clearTimeout(initialHide);
-      document.removeEventListener("fullscreenchange", updateFullscreen);
     };
   }, []);
+
+  useEffect(() => {
+    if (showSettings || showGuide) {
+      if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
+      setControlsVisible(true);
+    } else if (!dockHoveredRef.current) {
+      scheduleHide();
+    }
+  }, [showSettings, showGuide]);
 
   useEffect(() => {
     const check = async () => {
@@ -157,14 +172,29 @@ export default function App() {
   }, [remaining, running]);
 
   useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.volume = soundOn ? ambienceVolume : 0;
-      audioRef.current.playbackRate =
-        venue === "Classroom" ? 0.92 :
-        venue === "Conference room" ? 0.96 :
-        venue === "Outdoor amphitheatre" ? 1.04 : 1;
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = soundOn ? ambienceVolume : 0;
+    audio.playbackRate = venue === "Classroom" ? 0.94 : venue === "Conference room" ? 0.97 : 1;
+    if (running && soundOn) {
+      void audio.play().catch((error) => console.warn("Crowd ambience could not start:", error));
+    } else {
+      audio.pause();
     }
-  }, [soundOn, ambienceVolume, venue]);
+  }, [soundOn, ambienceVolume, venue, running]);
+
+  useEffect(() => {
+    const applause = applauseRef.current;
+    if (!applause) return;
+    if (!sessionEnded || !soundOn) {
+      applause.pause();
+      applause.currentTime = 0;
+      return;
+    }
+    applause.volume = Math.min(0.2, ambienceVolume * 1.05);
+    applause.currentTime = 0;
+    void applause.play().catch((error) => console.warn("Audience applause could not start:", error));
+  }, [sessionEnded, soundOn, ambienceVolume]);
 
   useEffect(() => () => {
     mediaRef.current?.getTracks().forEach((track) => track.stop());
@@ -173,6 +203,7 @@ export default function App() {
     if (hideTimerRef.current) window.clearTimeout(hideTimerRef.current);
     void audioContextRef.current?.close();
     audioRef.current?.pause();
+    applauseRef.current?.pause();
   }, []);
 
   async function toggleMic() {
@@ -218,21 +249,13 @@ export default function App() {
     }
   }
 
-  async function startSession() {
+  function startSession() {
     setRemaining(duration * 60);
     setElapsed(0);
     setSessionEnded(false);
     setRunning(true);
     sceneRef.current?.setAudienceMood(energy);
     setControlsVisible(true);
-    if (soundOn && audioRef.current) {
-      audioRef.current.volume = ambienceVolume;
-      try {
-        await audioRef.current.play();
-      } catch (error) {
-        console.warn("Crowd ambience could not start:", error);
-      }
-    }
     scheduleHide();
   }
 
@@ -243,20 +266,8 @@ export default function App() {
     setControlsVisible(true);
   }
 
-  async function toggleSound() {
-    const next = !soundOn;
-    setSoundOn(next);
-    if (!audioRef.current) return;
-    if (next) {
-      audioRef.current.volume = ambienceVolume;
-      try {
-        await audioRef.current.play();
-      } catch (error) {
-        console.warn("Crowd ambience could not start:", error);
-      }
-    } else {
-      audioRef.current.pause();
-    }
+  function toggleSound() {
+    setSoundOn((value) => !value);
   }
 
   async function toggleFullscreen() {
@@ -283,13 +294,13 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (target && (["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(target.tagName) || target.isContentEditable)) return;
       if (event.code === "Space") {
         event.preventDefault();
         if (running) endSession();
-        else void startSession();
+        else startSession();
       } else if (event.key.toLowerCase() === "m") {
-        void toggleSound();
+        toggleSound();
       } else if (event.key.toLowerCase() === "f") {
         void toggleFullscreen();
       } else if (event.key === "?") {
@@ -312,9 +323,17 @@ export default function App() {
         if (event.pointerType === "touch") revealControls();
       }}
     >
-      <Auditorium ref={sceneRef} audience={audience} energy={energy} venue={venue} />
+      <Suspense fallback={<div className="scene-loading"><span className="scene-loading-orb" /><span>BUILDING THE ROOM</span></div>}>
+        <Auditorium ref={sceneRef} audience={audience} energy={energy} venue={venue} />
+      </Suspense>
       <div className="cinema-vignette" aria-hidden="true" />
-      <audio ref={audioRef} src={CROWD_AMBIENCE} loop preload="none" />
+      <div className="stage-caption" aria-live="polite">
+        <span className="stage-caption-overline">LIVE REHEARSAL · {venue.toUpperCase()}</span>
+        <strong>{title || "Your next big idea"}</strong>
+        <span className="stage-caption-meta">{selectedAudienceCount(audience)} PEOPLE · {energy.toUpperCase()} AUDIENCE</span>
+      </div>
+      <audio ref={audioRef} src={AMBIENCE_BY_VENUE[venue]} loop preload="none" />
+      <audio ref={applauseRef} src={APPLAUSE_SOUND} preload="none" />
 
       <div className={controlsVisible ? "controls-layer is-visible" : "controls-layer"} aria-hidden={!controlsVisible}>
         <header className="top-rail" onMouseEnter={handleDockEnter} onMouseLeave={handleDockLeave}>
@@ -400,7 +419,7 @@ export default function App() {
           <div className="dock-actions">
             <button
               className={soundOn ? "dock-icon active" : "dock-icon"}
-              onClick={() => void toggleSound()}
+              onClick={() => toggleSound()}
               title={soundOn ? "Mute crowd ambience (M)" : "Enable crowd ambience (M)"}
               aria-label={soundOn ? "Mute crowd ambience" : "Enable crowd ambience"}
             >
@@ -417,7 +436,7 @@ export default function App() {
             <button className="dock-icon" onClick={() => setShowSettings((value) => !value)} title="Practice settings" aria-label="Practice settings">
               <Settings2 size={17} />
             </button>
-            <button className="start-button" onClick={() => running ? endSession() : void startSession()}>
+            <button className="start-button" onClick={() => running ? endSession() : startSession()}>
               {running ? <><Pause size={16} /> END SESSION</> : <><Play size={16} fill="currentColor" /> START PRACTICE</>}
             </button>
           </div>
@@ -458,7 +477,7 @@ export default function App() {
               <span className="finish-kicker">SESSION COMPLETE</span>
               <h1>Good work. Take a breath.</h1>
               <p>You spent {Math.floor(elapsed / 60)}m {elapsed % 60}s on stage. The room will be right here when you're ready for another rep.</p>
-              <button className="start-button" onClick={() => void startSession()}><Play size={16} fill="currentColor" /> PRACTISE AGAIN</button>
+              <button className="start-button" onClick={() => startSession()}><Play size={16} fill="currentColor" /> PRACTISE AGAIN</button>
               <button className="finish-close" onClick={() => setSessionEnded(false)}>BACK TO THE ROOM</button>
             </div>
           </div>
